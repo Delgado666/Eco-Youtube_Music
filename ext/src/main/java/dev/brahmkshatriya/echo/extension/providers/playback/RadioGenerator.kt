@@ -1,13 +1,15 @@
 package dev.brahmkshatriya.echo.extension.providers.playback
 
+import dev.brahmkshatriya.echo.common.helpers.PagedData
 import dev.brahmkshatriya.echo.common.models.Album
 import dev.brahmkshatriya.echo.common.models.Artist
 import dev.brahmkshatriya.echo.common.models.EchoMediaItem
 import dev.brahmkshatriya.echo.common.models.Feed
-import dev.brahmkshatriya.echo.common.models.Feed.Companion.toFeed
 import dev.brahmkshatriya.echo.common.models.Feed.Companion.loadAll
+import dev.brahmkshatriya.echo.common.models.Feed.Companion.toFeed
 import dev.brahmkshatriya.echo.common.models.Playlist
 import dev.brahmkshatriya.echo.common.models.Radio
+import dev.brahmkshatriya.echo.common.models.Shelf
 import dev.brahmkshatriya.echo.common.models.Track
 import dev.brahmkshatriya.echo.common.models.User
 import dev.brahmkshatriya.echo.extension.ModelTypeHelper
@@ -16,8 +18,6 @@ import dev.toastbits.ytmkt.impl.youtubei.YoutubeiApi
 import dev.toastbits.ytmkt.model.external.ThumbnailProvider
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
-import dev.brahmkshatriya.echo.common.helpers.PagedData
-
 
 class RadioGenerator(
     private val api: YoutubeiApi,
@@ -36,6 +36,68 @@ class RadioGenerator(
     }
 
     private suspend fun generateFromTrack(track: Track, context: EchoMediaItem?): Radio {
+        println("RadioGenerator - generateFromTrack for track: ${track.title} (${track.id})")
+        println("RadioGenerator - context type: ${context?.let { it::class.simpleName } ?: "null"}")
+        
+        // 1. Verificamos si venimos de un estante/lista con elementos (Top Songs)
+        val listItems = when (context) {
+            is Shelf.Lists -> {
+                println("RadioGenerator - context is Shelf.Lists, list size: ${context.list.size}")
+                context.list
+            }
+            is EchoMediaItem.Lists -> {
+                println("RadioGenerator - context is EchoMediaItem.Lists, list size: ${context.list.size}")
+                context.list
+            }
+            else -> {
+                println("RadioGenerator - context is NOT a list type")
+                null
+            }
+        }
+
+        if (listItems != null) {
+            val listTracks = listItems.mapNotNull { media ->
+                when (media) {
+                    is EchoMediaItem.TrackItem -> {
+                        println("RadioGenerator - item is TrackItem: ${media.track.title}")
+                        media.track
+                    }
+                    is Track -> {
+                        println("RadioGenerator - item is Track: ${media.title}")
+                        media
+                    }
+                    else -> {
+                        println("RadioGenerator - item is unknown type: ${media::class.simpleName}")
+                        null
+                    }
+                }
+            }
+            println("RadioGenerator - extracted ${listTracks.size} tracks from context")
+
+            if (listTracks.isNotEmpty()) {
+                val selectedIndex = listTracks.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
+                println("RadioGenerator - selected track index: $selectedIndex of ${listTracks.size}")
+                val orderedTracks = listTracks.subList(selectedIndex, listTracks.size) + 
+                                    listTracks.subList(0, selectedIndex)
+
+                val id = "custom_list_${track.id}"
+                val title = (context as? Shelf.Lists)?.title 
+                    ?: (context as? EchoMediaItem.Lists)?.title 
+                    ?: "Top Songs"
+                println("RadioGenerator - creating custom list radio with ${orderedTracks.size} tracks, title: $title")
+
+                return Radio(
+                    id = id,
+                    title = title,
+                    extras = mutableMapOf(
+                        "tracks" to json.encodeToString(orderedTracks)
+                    )
+                )
+            }
+        }
+
+        // 2. Si no venimos de una lista fija, se ejecuta el comportamiento original de YouTube Radio
+        println("RadioGenerator - falling back to YouTube Radio")
         val id = "radio_${track.id}"
         val cont = context?.extras?.get("cont")
         val result = api.SongRadio.getSongRadio(track.id, cont).getOrThrow()
