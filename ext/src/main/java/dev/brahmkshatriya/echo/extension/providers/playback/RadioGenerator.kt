@@ -22,9 +22,12 @@ class RadioGenerator(
     private val api: YoutubeiApi,
     private val json: Json,
     private val thumbnailQuality: ThumbnailProvider.Quality,
-    private val trackCache: MutableMap<String, PagedData<Track>>,
-    private val topSongsCache: MutableMap<String, List<Track>> = mutableMapOf()
+    private val trackCache: MutableMap<String, PagedData<Track>>
 ) {
+    companion object {
+        val topSongsCache = mutableMapOf<String, List<Track>>()
+    }
+
     suspend fun generateRadio(item: EchoMediaItem, context: EchoMediaItem? = null): Radio {
         return when (item) {
             is Track -> generateFromTrack(item, context)
