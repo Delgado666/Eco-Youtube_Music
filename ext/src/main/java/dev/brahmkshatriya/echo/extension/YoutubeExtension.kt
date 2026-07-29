@@ -254,123 +254,6 @@ class YoutubeExtension : ExtensionClient, HomeFeedClient, TrackClient, SearchFee
 
     override suspend fun loadTracks(album: Album): Feed<Track>? = trackMap[album.id]?.toFeed()
 
-    Choose a thread
-
-Detached HEAD
-Necesito modificar la forma que funciona la radio con Top songs. Este proyecto es una extensión relacionada con la app echo music, la cual es un reproductor basado en extensiones. Está extensión es particularmente de YouTube music. Mí problema es que al entrar a la ficha del artista, hay una sección que dice "top songs", la cual, si aceptas ahí, solo toma el shelf de 5 canciones, y si apretás el botón para ver más, aparecen las canciones (50-60 resultados) pero al seleccionar una, realiza un trigger a radio, colocando canciones aleatorias y no considerando una lista de reproducción a esa lista
-
-
-Edit message
-Now let me look at the relevant Echo common models and how the "view more" navigation is handled:
-
-Let me look at the rest of the loadArtist function and try to understand how the expanded list works:
-
-Now I've identified the root cause. Let me explain and then implement the fix.
-
-Problem
-En YoutubeExtension.kt, la función getArtistMediaItems() crea el feed del botón "view more" (ver más) de los "Top Songs" usando createShelfPagedDataFromMediaItems(), que envuelve CADA canción en un Shelf.Item(item) individual. Cuando tocas una canción desde esa lista expandida:
-
-El contexto es Shelf.Item(item) (una canción individual)
-RadioGenerator.generateFromTrack() busca Shelf.Lists o EchoMediaItem.Lists como contexto
-Como no encuentra una lista, cae al comportamiento por defecto de YouTube Radio → canciones aleatorias
-Solución
-Cambiar la construcción del feed "view more" para que las canciones se envuelvan en un único Shelf.Lists.Items conteniendo TODAS las canciones de la lista expandida. Así cuando selecciones una canción, el contexto será Shelf.Lists.Items con la lista completa, y RadioGenerator podrá construir una radio ordenada correctamente.
-
-Now let me apply the fix. The change is in YoutubeExtension.kt, in the getArtistMediaItems function. Instead of creating individual Shelf.Item items via createShelfPagedDataFromMediaItems, I'll wrap all items in a single Shelf.Lists.Items so the radio generator can detect the full list context.
-
-Ahora verifiquemos que RadioGenerator.kt maneje correctamente Shelf.Lists como contexto:
-
-El RadioGenerator.kt ya maneja correctamente Shelf.Lists como contexto (línea 42-49). No necesita cambios.
-
-Now let me verify imports are correct in YoutubeExtension.kt:
-
-Resumen del problema y solución
-Problema: Al hacer clic en "ver más" en los "Top Songs" de un artista, la lista expandida (50-60 canciones) se construía con createShelfPagedDataFromMediaItems(), que envolvía cada canción individualmente como Shelf.Item(item). Al seleccionar una canción desde esa lista, el contexto era un Shelf.Item (elemento individual), no un Shelf.Lists (lista completa). RadioGenerator.generateFromTrack() no reconocía el contexto como lista, por lo que recurría a YouTube Radio generando canciones aleatorias.
-
-Solución: Cambié la construcción del feed "view more" en YoutubeExtension.kt (getArtistMediaItems) para que todas las canciones de la lista expandida se envuelvan en un único Shelf.Lists.Items conteniendo todas las canciones. Ahora, al seleccionar una canción:
-
-El contexto es Shelf.Lists.Items (una lista completa con todas las canciones)
-RadioGenerator.generateFromTrack() detecta Shelf.Lists → context.list
-Extrae todos los tracks, encuentra la posición de la canción seleccionada
-Ordena la reproducción desde la canción seleccionada en adelante
-Reproduce la lista completa como una radio ordenada, no aleatoria
-Archivos modificados:
-
-ext/src/main/java/dev/brahmkshatriya/echo/extension/YoutubeExtension.kt — Reemplacé createShelfPagedDataFromMediaItems por la construcción directa de Shelf.Lists.Items con todos los items. También eliminé la función createShelfPagedDataFromMediaItems que quedó sin uso.
-
-Fork
-
-Copy
-Excelente. Podes generar un workflow para poder probar si todo funciona bien? Estos cambios los podes subir automáticamente a mí repositorio?
-
-
-Edit message
-Entiendo. No tengo acceso a tus credenciales de GitHub para hacer push. Lo que sí puedo hacer es:
-
-Commitear los cambios localmente para que queden listos en tu máquina
-Crear un workflow de testing para GitHub Actions
-Dejarte las instrucciones para hacer push cuando quieras
-Sobre lo del workflow de testing: los tests unitarios existentes están deshabilitados en ext/build.gradle.kts (línea 70-72) porque requieren conexión a la API real, y la clase TestExtension no está en el repo. Pero puedo agregar un test unitario específico que valide la lógica del RadioGenerator sin depender de la red, y crear un workflow que compile el proyecto para verificar que todo anda.
-
-El diff se ve bien. Ahora voy a commitear localmente:
-
-Todo completado. Resumen de lo que se hizo:
-
-Cambios realizados
-**1. YoutubeExtension.kt** — Fix principal
-
-El feed "view more" del artista ahora envuelve TODAS las canciones de la lista expandida en un único Shelf.Lists.Items en lugar de Shelf.Item individuales.
-Esto permite que RadioGenerator.generateFromTrack() detecte el contexto como Shelf.Lists y construya una radio ordenada desde la canción seleccionada.
-Se eliminó la función createShelfPagedDataFromMediaItems que quedó sin uso.
-**2. .github/workflows/test.yml** — Nuevo workflow
-
-Se ejecuta en PRs hacia main o manualmente (workflow_dispatch).
-Compila el módulo ext para verificar que los cambios sean sintácticamente correctos.
-3. Commit local — ec80726
-
-Para pushear a tu repositorio
-Los cambios están commiteados localmente pero no tengo acceso a tus credenciales de GitHub. Para pushear:
-
-bash
-# Si ya tenés el remote configurado con HTTPS:
-git push origin main
-
-# Si usás SSH (recomendado):
-git remote set-url origin git@github.com:Delgado666/Eco-Youtube_Music.git
-git push origin main
-
-# Si tenés un token de acceso personal:
-git remote set-url origin https://<TOKEN>@github.com/Delgado666/Eco-Youtube_Music.git
-git push origin main
-Cómo probar manualmente
-Instalá la extensión compilada en Echo Music
-Andá a cualquier artista → sección "Top Songs"
-Tocá "Ver más" → se abre la lista completa (~50 canciones)
-Seleccioná cualquier canción de esa lista
-✅ Debería comenzar la reproducción desde esa canción y continuar con el resto de los Top Songs en orden
-❌ Antes del fix: iniciaba YouTube Radio con canciones aleatorias
-¿Querés que haga algo más con estos cambios?
-
-
-Fork
-
-Copy
-Discúlpame pero no puedo ver el commit. Cómo lo veo? Poneme el código completo del archivo acá y yo lo copio en el repo
-
-
-Edit message
-No hay problema. Acá está el archivo completo modificado y el workflow nuevo.
-
-YoutubeExtension.kt
-
-▶
-Worked for 16s
-
-Te muestro la parte específica que cambió. Es solo la función getArtistMediaItems dentro de YoutubeExtension.kt. El resto del archivo quedó igual.
-
-Reemplazá esta función (buscá getArtistMediaItems en tu archivo):
-
-kotlin
     private suspend fun getArtistMediaItems(artist: Artist): List<Shelf> {
         val result =
             loadedArtist.takeIf { artist.id == it?.id } ?: api.LoadArtist.loadArtist(artist.id)
@@ -398,7 +281,7 @@ kotlin
                         }.flatten()
                     }.let { mediaItems ->
                         Feed(listOf()) { _ ->
-                            Feed.Data(PagedData.Single {
+                            Feed.Data(PagedData.Single<Shelf> {
                                 val allItems = mediaItems.loadAll()
                                 listOf(Shelf.Lists.Items(
                                     id = "${shelfId}_full",
