@@ -259,39 +259,60 @@ class YoutubeExtension : ExtensionClient, HomeFeedClient, TrackClient, SearchFee
             loadedArtist.takeIf { artist.id == it?.id } ?: api.LoadArtist.loadArtist(artist.id)
                 .getOrThrow()
 
+        // Precargar la lista completa de Top Songs en el caché
+        result.layouts?.forEach { layout ->
+            val shelfTitle = layout.title?.getString(language) ?: "Unknown"
+            if (layout.items?.firstOrNull() is dev.toastbits.ytmkt.model.external.mediaitem.YtmSong) {
+                val single = (layout.title?.getString(ENGLISH) == SINGLES)
+                val viewMoreData = layout.view_more?.getBrowseParamsData()
+                val allItems = viewMoreData?.let { param ->
+                    try {
+                        artistMoreEndpoint.load(param).flatMap { row ->
+                            row.items.mapNotNull { item ->
+                                item.toEchoMediaItem(single, thumbnailQuality)
+                            }
+                        }
+                    } catch (e: Exception) {
+                        layout.items?.mapNotNull { item ->
+                            item.toEchoMediaItem(single, thumbnailQuality)
+                        } ?: emptyList()
+                    }
+                } ?: (layout.items?.mapNotNull { item ->
+                    item.toEchoMediaItem(single, thumbnailQuality)
+                } ?: emptyList())
+
+                val trackList = allItems.filterIsInstance<Track>()
+                if (trackList.isNotEmpty()) {
+                    trackList.forEach { t ->
+                        components.topSongsCache[t.id] = trackList
+                    }
+                    println("getArtistMediaItems - cached ${trackList.size} tracks")
+                }
+            }
+        }
+
         return result.layouts?.map { layout ->
             val title = layout.title?.getString(ENGLISH)
             val single = title == SINGLES
             val shelfTitle = layout.title?.getString(language) ?: "Unknown"
-            println("getArtistMediaItems - processing shelf: '$shelfTitle'")
-            
-            // Cargar items iniciales del shelf
+
             val initialItems = layout.items?.mapNotNull { item ->
                 item.toEchoMediaItem(single, thumbnailQuality)
             } ?: emptyList()
-            println("getArtistMediaItems - '$shelfTitle' has ${initialItems.size} initial items")
-            
-            // Intentar cargar la lista completa desde view_more si existe
+
             val viewMoreData = layout.view_more?.getBrowseParamsData()
-            println("getArtistMediaItems - '$shelfTitle' view_more: ${viewMoreData != null}")
-            
+
             val allItems = viewMoreData?.let { param ->
                 try {
-                    val data = artistMoreEndpoint.load(param)
-                    val loaded = data.flatMap { row ->
+                    artistMoreEndpoint.load(param).flatMap { row ->
                         row.items.mapNotNull { item ->
                             item.toEchoMediaItem(single, thumbnailQuality)
                         }
                     }
-                    println("getArtistMediaItems - '$shelfTitle' loaded ${loaded.size} items from view_more")
-                    loaded
                 } catch (e: Exception) {
-                    println("getArtistMediaItems - '$shelfTitle' view_more load failed: ${e.message}")
                     initialItems
                 }
             } ?: initialItems
-            
-            println("getArtistMediaItems - '$shelfTitle' final items: ${allItems.size}")
 
             Shelf.Lists.Items(
                 id = shelfTitle.hashCode().toString(),
@@ -302,6 +323,7 @@ class YoutubeExtension : ExtensionClient, HomeFeedClient, TrackClient, SearchFee
             )
         } ?: emptyList()
     }
+    
     override suspend fun loadFeed(artist: Artist): Feed<Shelf> {
         val shelves = getArtistMediaItems(artist)
         return Feed(emptyList()) { _ -> PagedData.Single { shelves }.toFeedData() }
