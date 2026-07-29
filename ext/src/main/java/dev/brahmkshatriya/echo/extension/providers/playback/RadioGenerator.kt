@@ -9,7 +9,6 @@ import dev.brahmkshatriya.echo.common.models.Feed.Companion.loadAll
 import dev.brahmkshatriya.echo.common.models.Feed.Companion.toFeed
 import dev.brahmkshatriya.echo.common.models.Playlist
 import dev.brahmkshatriya.echo.common.models.Radio
-import dev.brahmkshatriya.echo.common.models.Shelf
 import dev.brahmkshatriya.echo.common.models.Track
 import dev.brahmkshatriya.echo.common.models.User
 import dev.brahmkshatriya.echo.extension.ModelTypeHelper
@@ -23,7 +22,8 @@ class RadioGenerator(
     private val api: YoutubeiApi,
     private val json: Json,
     private val thumbnailQuality: ThumbnailProvider.Quality,
-    private val trackCache: MutableMap<String, PagedData<Track>>
+    private val trackCache: MutableMap<String, PagedData<Track>>,
+    private val topSongsCache: MutableMap<String, List<Track>> = mutableMapOf()
 ) {
     suspend fun generateRadio(item: EchoMediaItem, context: EchoMediaItem? = null): Radio {
         return when (item) {
@@ -35,33 +35,21 @@ class RadioGenerator(
         }
     }
 
-    @Suppress("UNCHECKED_CAST")
     private suspend fun generateFromTrack(track: Track, context: EchoMediaItem?): Radio {
-        // 1. Intenta obtener lista desde Shelf.Lists.Items (el contexto de Top Songs)
-        val listItems: List<EchoMediaItem>? = 
-            (context as? Shelf.Lists.Items)?.list as? List<EchoMediaItem>
-
-        if (listItems != null) {
-            val listTracks = listItems.filterIsInstance<Track>()
-
-            if (listTracks.isNotEmpty()) {
-                val selectedIndex = listTracks.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
-                val orderedTracks = listTracks.subList(selectedIndex, listTracks.size) +
-                                    listTracks.subList(0, selectedIndex)
-
-                val id = "custom_list_${track.id}"
-
-                return Radio(
-                    id = id,
-                    title = "Top Songs",
-                    extras = mutableMapOf(
-                        "tracks" to json.encodeToString(orderedTracks)
-                    )
-                )
-            }
+        // 1. Verificar si el track está en el caché de Top Songs
+        val cachedTracks = topSongsCache[track.id]
+        if (cachedTracks != null && cachedTracks.isNotEmpty()) {
+            val selectedIndex = cachedTracks.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
+            val orderedTracks = cachedTracks.subList(selectedIndex, cachedTracks.size) +
+                                cachedTracks.subList(0, selectedIndex)
+            return Radio(
+                id = "custom_list_${track.id}",
+                title = "Top Songs",
+                extras = mutableMapOf("tracks" to json.encodeToString(orderedTracks))
+            )
         }
 
-        // 2. Si no venimos de una lista, usar YouTube Radio original
+        // 2. Si no hay lista en caché, usar YouTube Radio original
         val id = "radio_${track.id}"
         val cont = context?.extras?.get("cont")
         val result = api.SongRadio.getSongRadio(track.id, cont).getOrThrow()
