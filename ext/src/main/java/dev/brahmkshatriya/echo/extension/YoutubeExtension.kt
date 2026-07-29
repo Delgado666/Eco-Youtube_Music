@@ -259,33 +259,44 @@ class YoutubeExtension : ExtensionClient, HomeFeedClient, TrackClient, SearchFee
             loadedArtist.takeIf { artist.id == it?.id } ?: api.LoadArtist.loadArtist(artist.id)
                 .getOrThrow()
 
-        return result.layouts?.map {
-            val title = it.title?.getString(ENGLISH)
+        return result.layouts?.map { layout ->
+            val title = layout.title?.getString(ENGLISH)
             val single = title == SINGLES
+            val shelfTitle = layout.title?.getString(language) ?: "Unknown"
+            println("getArtistMediaItems - processing shelf: '$shelfTitle'")
+            
             // Cargar items iniciales del shelf
-            val initialItems = it.items?.mapNotNull { item ->
+            val initialItems = layout.items?.mapNotNull { item ->
                 item.toEchoMediaItem(single, thumbnailQuality)
             } ?: emptyList()
+            println("getArtistMediaItems - '$shelfTitle' has ${initialItems.size} initial items")
             
             // Intentar cargar la lista completa desde view_more si existe
-            val allItems = it.view_more?.getBrowseParamsData()?.let { param ->
+            val viewMoreData = layout.view_more?.getBrowseParamsData()
+            println("getArtistMediaItems - '$shelfTitle' view_more: ${viewMoreData != null}")
+            
+            val allItems = viewMoreData?.let { param ->
                 try {
                     val data = artistMoreEndpoint.load(param)
-                    data.flatMap { row ->
+                    val loaded = data.flatMap { row ->
                         row.items.mapNotNull { item ->
                             item.toEchoMediaItem(single, thumbnailQuality)
                         }
                     }
+                    println("getArtistMediaItems - '$shelfTitle' loaded ${loaded.size} items from view_more")
+                    loaded
                 } catch (e: Exception) {
-                    println("Failed to load more artist items: ${e.message}")
+                    println("getArtistMediaItems - '$shelfTitle' view_more load failed: ${e.message}")
                     initialItems
                 }
             } ?: initialItems
+            
+            println("getArtistMediaItems - '$shelfTitle' final items: ${allItems.size}")
 
             Shelf.Lists.Items(
-                id = it.title?.getString(language)?.hashCode()?.toString() ?: "Unknown",
-                title = it.title?.getString(language) ?: "Unknown",
-                subtitle = it.subtitle?.getString(language),
+                id = shelfTitle.hashCode().toString(),
+                title = shelfTitle,
+                subtitle = layout.subtitle?.getString(language),
                 list = allItems,
                 more = null
             )
