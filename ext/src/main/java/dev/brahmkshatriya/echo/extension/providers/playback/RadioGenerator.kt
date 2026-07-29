@@ -35,32 +35,25 @@ class RadioGenerator(
         }
     }
 
+    @Suppress("UNCHECKED_CAST")
     private suspend fun generateFromTrack(track: Track, context: EchoMediaItem?): Radio {
-        // 1. Verificamos si venimos de un estante/lista con elementos (Top Songs)
+        // 1. Intentar obtener lista desde el contexto (Shelf.Lists / EchoMediaItem.Lists)
         val listItems = when (context) {
-            is Shelf.Lists -> context.list
-            is EchoMediaItem.Lists -> context.list
+            is Shelf.Lists<*> -> context.list as? List<EchoMediaItem>
+            is EchoMediaItem.Lists<*> -> context.list as? List<EchoMediaItem>
             else -> null
         }
 
         if (listItems != null) {
-            val listTracks = listItems.mapNotNull { media ->
-                when (media) {
-                    is EchoMediaItem.TrackItem -> media.track
-                    is Track -> media
-                    else -> null
-                }
-            }
+            val listTracks = listItems.filterIsInstance<Track>()
 
             if (listTracks.isNotEmpty()) {
                 val selectedIndex = listTracks.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
-                val orderedTracks = listTracks.subList(selectedIndex, listTracks.size) + 
+                val orderedTracks = listTracks.subList(selectedIndex, listTracks.size) +
                                     listTracks.subList(0, selectedIndex)
 
                 val id = "custom_list_${track.id}"
-                val title = (context as? Shelf.Lists)?.title 
-                    ?: (context as? EchoMediaItem.Lists)?.title 
-                    ?: "Top Songs"
+                val title = "Top Songs"
 
                 return Radio(
                     id = id,
@@ -72,14 +65,14 @@ class RadioGenerator(
             }
         }
 
-        // 2. Si no venimos de una lista fija, se ejecuta el comportamiento original de YouTube Radio
+        // 2. Si no venimos de una lista, usar YouTube Radio original
         val id = "radio_${track.id}"
         val cont = context?.extras?.get("cont")
         val result = api.SongRadio.getSongRadio(track.id, cont).getOrThrow()
-        val tracks = result.items.map { song: dev.toastbits.ytmkt.model.external.mediaitem.YtmSong -> 
+        val tracks = result.items.map { song: dev.toastbits.ytmkt.model.external.mediaitem.YtmSong ->
             song.toTrack(thumbnailQuality)
         }
-        
+
         return Radio(
             id = id,
             title = "${track.title} Radio",
@@ -99,10 +92,10 @@ class RadioGenerator(
     private suspend fun generateFromArtist(artist: Artist): Radio {
         val id = "radio_${artist.id}"
         val result = api.ArtistRadio.getArtistRadio(artist.id, null).getOrThrow()
-        val tracks = result.items.map { song: dev.toastbits.ytmkt.model.external.mediaitem.YtmSong -> 
+        val tracks = result.items.map { song: dev.toastbits.ytmkt.model.external.mediaitem.YtmSong ->
             song.toTrack(thumbnailQuality)
         }
-        
+
         return Radio(
             id = id,
             title = "${artist.name} Radio",
@@ -124,8 +117,8 @@ class RadioGenerator(
     }
 
     fun loadRadioTracks(radio: Radio): Feed<Track> {
-        return PagedData.Single { 
-            val tracksJson = radio.extras["tracks"] 
+        return PagedData.Single {
+            val tracksJson = radio.extras["tracks"]
                 ?: throw Exception("No tracks found in radio")
             json.decodeFromString<List<Track>>(tracksJson)
         }.toFeed()
