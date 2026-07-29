@@ -1,13 +1,15 @@
 package dev.brahmkshatriya.echo.extension.providers.playback
 
+import dev.brahmkshatriya.echo.common.helpers.PagedData
 import dev.brahmkshatriya.echo.common.models.Album
 import dev.brahmkshatriya.echo.common.models.Artist
 import dev.brahmkshatriya.echo.common.models.EchoMediaItem
 import dev.brahmkshatriya.echo.common.models.Feed
-import dev.brahmkshatriya.echo.common.models.Feed.Companion.toFeed
 import dev.brahmkshatriya.echo.common.models.Feed.Companion.loadAll
+import dev.brahmkshatriya.echo.common.models.Feed.Companion.toFeed
 import dev.brahmkshatriya.echo.common.models.Playlist
 import dev.brahmkshatriya.echo.common.models.Radio
+import dev.brahmkshatriya.echo.common.models.Shelf
 import dev.brahmkshatriya.echo.common.models.Track
 import dev.brahmkshatriya.echo.common.models.User
 import dev.brahmkshatriya.echo.extension.ModelTypeHelper
@@ -16,8 +18,6 @@ import dev.toastbits.ytmkt.impl.youtubei.YoutubeiApi
 import dev.toastbits.ytmkt.model.external.ThumbnailProvider
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
-import dev.brahmkshatriya.echo.common.helpers.PagedData
-
 
 class RadioGenerator(
     private val api: YoutubeiApi,
@@ -36,6 +36,43 @@ class RadioGenerator(
     }
 
     private suspend fun generateFromTrack(track: Track, context: EchoMediaItem?): Radio {
+        // 1. Verificamos si venimos de un estante/lista con elementos (Top Songs)
+        val listItems = when (context) {
+            is Shelf.Lists -> context.list
+            is EchoMediaItem.Lists -> context.list
+            else -> null
+        }
+
+        if (listItems != null) {
+            val listTracks = listItems.mapNotNull { media ->
+                when (media) {
+                    is EchoMediaItem.TrackItem -> media.track
+                    is Track -> media
+                    else -> null
+                }
+            }
+
+            if (listTracks.isNotEmpty()) {
+                val selectedIndex = listTracks.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
+                val orderedTracks = listTracks.subList(selectedIndex, listTracks.size) + 
+                                    listTracks.subList(0, selectedIndex)
+
+                val id = "custom_list_${track.id}"
+                val title = (context as? Shelf.Lists)?.title 
+                    ?: (context as? EchoMediaItem.Lists)?.title 
+                    ?: "Top Songs"
+
+                return Radio(
+                    id = id,
+                    title = title,
+                    extras = mutableMapOf(
+                        "tracks" to json.encodeToString(orderedTracks)
+                    )
+                )
+            }
+        }
+
+        // 2. Si no venimos de una lista fija, se ejecuta el comportamiento original de YouTube Radio
         val id = "radio_${track.id}"
         val cont = context?.extras?.get("cont")
         val result = api.SongRadio.getSongRadio(track.id, cont).getOrThrow()
