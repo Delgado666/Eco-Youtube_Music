@@ -262,41 +262,35 @@ class YoutubeExtension : ExtensionClient, HomeFeedClient, TrackClient, SearchFee
         return result.layouts?.map {
             val title = it.title?.getString(ENGLISH)
             val single = title == SINGLES
+            // Cargar items iniciales del shelf
+            val initialItems = it.items?.mapNotNull { item ->
+                item.toEchoMediaItem(single, thumbnailQuality)
+            } ?: emptyList()
+            
+            // Intentar cargar la lista completa desde view_more si existe
+            val allItems = it.view_more?.getBrowseParamsData()?.let { param ->
+                try {
+                    val data = artistMoreEndpoint.load(param)
+                    data.flatMap { row ->
+                        row.items.mapNotNull { item ->
+                            item.toEchoMediaItem(single, thumbnailQuality)
+                        }
+                    }
+                } catch (e: Exception) {
+                    println("Failed to load more artist items: ${e.message}")
+                    initialItems
+                }
+            } ?: initialItems
+
             Shelf.Lists.Items(
                 id = it.title?.getString(language)?.hashCode()?.toString() ?: "Unknown",
                 title = it.title?.getString(language) ?: "Unknown",
                 subtitle = it.subtitle?.getString(language),
-                list = it.items?.mapNotNull { item ->
-                    item.toEchoMediaItem(single, thumbnailQuality)
-                } ?: emptyList(),
-                more = it.view_more?.getBrowseParamsData()?.let { param ->
-                    val shelfId = it.title?.getString(language)?.hashCode()?.toString() ?: "Unknown"
-                    val shelfTitle = it.title?.getString(language) ?: "Top Songs"
-                    PagedData.Single {
-                        val data = artistMoreEndpoint.load(param)
-                        data.map { row ->
-                            row.items.mapNotNull { item ->
-                                item.toEchoMediaItem(single, thumbnailQuality)
-                            }
-                        }.flatten()
-                    }.let { mediaItems ->
-                        Feed(listOf()) { _ ->
-                            Feed.Data(PagedData.Single<Shelf> {
-                                val allItems = mediaItems.loadAll()
-                                listOf(Shelf.Lists.Items(
-                                    id = "${shelfId}_full",
-                                    title = shelfTitle,
-                                    subtitle = null,
-                                    list = allItems,
-                                    more = null
-                                ))
-                            })
-                        }
-                    }
-                })
+                list = allItems,
+                more = null
+            )
         } ?: emptyList()
     }
-
     override suspend fun loadFeed(artist: Artist): Feed<Shelf> {
         val shelves = getArtistMediaItems(artist)
         return Feed(emptyList()) { _ -> PagedData.Single { shelves }.toFeedData() }
