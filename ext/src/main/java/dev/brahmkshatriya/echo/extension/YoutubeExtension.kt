@@ -259,9 +259,8 @@ class YoutubeExtension : ExtensionClient, HomeFeedClient, TrackClient, SearchFee
             loadedArtist.takeIf { artist.id == it?.id } ?: api.LoadArtist.loadArtist(artist.id)
                 .getOrThrow()
 
-        // Precargar la lista completa de Top Songs en el caché
+        // Precargar lista completa de Top Songs en el caché del RadioGenerator
         result.layouts?.forEach { layout ->
-            val shelfTitle = layout.title?.getString(language) ?: "Unknown"
             if (layout.items?.firstOrNull() is dev.toastbits.ytmkt.model.external.mediaitem.YtmSong) {
                 val single = (layout.title?.getString(ENGLISH) == SINGLES)
                 val viewMoreData = layout.view_more?.getBrowseParamsData()
@@ -284,9 +283,8 @@ class YoutubeExtension : ExtensionClient, HomeFeedClient, TrackClient, SearchFee
                 val trackList = allItems.filterIsInstance<Track>()
                 if (trackList.isNotEmpty()) {
                     trackList.forEach { t ->
-                        components.topSongsCache[t.id] = trackList
+                        RadioGenerator.topSongsCache[t.id] = trackList
                     }
-                    println("getArtistMediaItems - cached ${trackList.size} tracks")
                 }
             }
         }
