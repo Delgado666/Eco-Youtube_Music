@@ -37,12 +37,9 @@ class RadioGenerator(
 
     @Suppress("UNCHECKED_CAST")
     private suspend fun generateFromTrack(track: Track, context: EchoMediaItem?): Radio {
-        // 1. Intentar obtener lista desde el contexto (Shelf.Lists / EchoMediaItem.Lists)
-        val listItems = when (context) {
-            is Shelf.Lists<*> -> context.list as? List<EchoMediaItem>
-            is EchoMediaItem.Lists<*> -> context.list as? List<EchoMediaItem>
-            else -> null
-        }
+        // 1. Intenta obtener lista desde Shelf.Lists.Items (el contexto de Top Songs)
+        val listItems: List<EchoMediaItem>? = 
+            (context as? Shelf.Lists.Items)?.list as? List<EchoMediaItem>
 
         if (listItems != null) {
             val listTracks = listItems.filterIsInstance<Track>()
@@ -53,11 +50,10 @@ class RadioGenerator(
                                     listTracks.subList(0, selectedIndex)
 
                 val id = "custom_list_${track.id}"
-                val title = "Top Songs"
 
                 return Radio(
                     id = id,
-                    title = title,
+                    title = "Top Songs",
                     extras = mutableMapOf(
                         "tracks" to json.encodeToString(orderedTracks)
                     )
