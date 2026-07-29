@@ -91,11 +91,7 @@ class ExtensionComponents(
     }
 
     val radioGenerator by lazy {
-        RadioGenerator(api, json, thumbnailQuality, trackCache, topSongsCache)
-    }
-
-    // Cache for full Top Songs track lists (track ID -> list of tracks)
-    val topSongsCache = mutableMapOf<String, List<Track>>()
+        RadioGenerator(api, json, thumbnailQuality, trackCache)
     }
 
     val playlistManager by lazy {
