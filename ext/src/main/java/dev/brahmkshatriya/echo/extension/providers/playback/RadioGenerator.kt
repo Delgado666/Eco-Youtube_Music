@@ -43,7 +43,7 @@ class RadioGenerator(
         val cachedTracks = topSongsCache[track.id]
         if (cachedTracks != null && cachedTracks.isNotEmpty()) {
             val selectedIndex = cachedTracks.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
-            val orderedTracks = cachedTracks.subList(selectedIndex, cachedTracks.size) +
+            val orderedTracks = cachedTracks.subList(selectedIndex + 1, cachedTracks.size) +
                                 cachedTracks.subList(0, selectedIndex)
             return Radio(
                 id = "custom_list_${track.id}",
